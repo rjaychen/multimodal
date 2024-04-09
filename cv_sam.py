@@ -1,4 +1,4 @@
-from fastsam import FastSAM, FastSAMPrompt
+from FastSAM.fastsam import FastSAM, FastSAMPrompt
 import torch
 import numpy as np
 import cv2
@@ -19,8 +19,8 @@ DEVICE = torch.device(
 print(DEVICE)
 
 
-cap = cv2.VideoCapture(1)
-
+cap = cv2.VideoCapture(0)
+if cap.isOpened(): print(cap.get(3), cap.get(4))
 while cap.isOpened():
     
     suc, frame = cap.read()
@@ -32,9 +32,9 @@ while cap.isOpened():
         source=frame,
         device=DEVICE,
         retina_masks=True,
-        imgsz=1024,
-        conf=0.4,
-        iou=0.9,
+        imgsz=(640,480), # 1024, # should match frame size of camera
+        conf=0.4, # Confidence threshold
+        iou=0.9, # Intersection over union threshold (Filter out duplicate detections)
     )
     
     print(everything_results[0].masks.shape)
@@ -54,12 +54,12 @@ while cap.isOpened():
     total_time = end - start
     fps = 1 / total_time
 
-    #prompt_process = FastSAMPrompt(frame, everything_results, device=DEVICE)
+    prompt_process = FastSAMPrompt(frame, everything_results, device=DEVICE)
     
     
 
     # # everything prompt
-    #ann = prompt_process.everything_prompt()
+    ann = prompt_process.everything_prompt()
     
     
     # # bbox prompt
@@ -81,15 +81,13 @@ while cap.isOpened():
     # point_label default [0] [1,0] 0:background, 1:foreground
     #ann = prompt_process.point_prompt(points=[[620, 360]], pointlabel=[1])
     
-    
-    
 
-    #img = prompt_process.plot_to_result(frame, annotations=ann)
+    img = prompt_process.plot_to_result(frame, annotations=ann)
     
     
     cv2.putText(frame, f'FPS: {int(fps)}', (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
     cv2.imshow('frame', frame)
-    #cv2.imshow('img', img)
+    cv2.imshow('img', img)
     
     
     if cv2.waitKey(1) & 0xFF == ord('q'):
