@@ -41,6 +41,7 @@ class Detector:
             displayText = "{}:{:.2f}".format(classLabel, classConfidence)
         except: 
             bbox = 0, 0, 1, 1
+            classColor, displayText = 0, ''
         
         return bbox, classColor, displayText
 

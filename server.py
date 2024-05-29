@@ -35,7 +35,7 @@ class Client:
             bbox_data = struct.pack('>6I', *bbox_values, *dims)
             total_length = len(image_data) + len(bbox_data)
             self.writer.write(struct.pack('>I', total_length)) # send total length
-            self.writer.write(struct.pack('>6I', bbox_data)) # send bbox data using Big-Endian
+            self.writer.write(bbox_data) # send bbox data using Big-Endian
             self.writer.write(image_data) # send image payload
             self.writer.flush()
             return True
