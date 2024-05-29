@@ -13,13 +13,30 @@ class Client:
         self.client_socket = client_socket
         self.writer = client_socket.makefile('wb')
 
-    def send_image_data(self, data):
+    def send_image_data(self, image_data):
         if not self.client_socket:
             return False
         try:
-            self.writer.write(struct.pack('>I', len(data))) # send image payload size using Big-Endian data
-            # print(struct.pack('>I', len(data)))
-            self.writer.write(data) # send actual payload
+            self.writer.write(struct.pack('>I', len(image_data))) # send image payload size using Big-Endian data
+            self.writer.write(image_data) # send actual payload
+            self.writer.flush()
+            return True
+        except Exception as e:
+            print(f"Error sending data: {e}")
+            return False
+        
+    def send_image_with_bbox(self, image_data, bbox_values=(0,0,1,1), dims=(1,1)):
+        """
+        Sends (1) total length (2) bbox values [x,y,w,h] (3) dimensions [h,w] (4) image payload. 
+        """
+        if not self.client_socket:
+            return False
+        try:
+            bbox_data = struct.pack('>6I', *bbox_values, *dims)
+            total_length = len(image_data) + len(bbox_data)
+            self.writer.write(struct.pack('>I', total_length)) # send total length
+            self.writer.write(struct.pack('>6I', bbox_data)) # send bbox data using Big-Endian
+            self.writer.write(image_data) # send image payload
             self.writer.flush()
             return True
         except Exception as e:

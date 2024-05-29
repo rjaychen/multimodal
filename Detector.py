@@ -45,8 +45,11 @@ class Detector:
         return bbox, classColor, displayText
 
     def drawBbox(self, frame, useBlurInstead=False, onlyBbox=False):
+        """
+        Returns: m x n x c image frame
+        Draws a bbox using the selected detection model with either Telea inpainting or median blurring. 
+        """
         (x, y, w, h) , classColor, displayText = self.getBbox(frame)
-
         cv2.rectangle(frame, (x,y), (x+w, y+h), color=(255,0,0), thickness=1)
         cv2.putText(frame, displayText, (x, y-10), cv2.FONT_HERSHEY_PLAIN, 1, classColor, 2)
 

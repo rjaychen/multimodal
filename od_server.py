@@ -10,6 +10,9 @@ class ODImageServer(ImageServer):
         self.detector = Detector(configPath, modelPath, classesPath)
 
     def send_thread_func(self):
+        """
+        Sends (first) inpainted ROI then (second) bbox values to client.
+        """
         cam = cv2.VideoCapture(0)
         self.sending = True
         while(cam.isOpened() and self.sending):
@@ -20,16 +23,22 @@ class ODImageServer(ImageServer):
             bboxs = list(bboxs)
             confidences = list(np.array(confidences).reshape(1, -1)[0])
             confidences = list(map(float, confidences))   
+            
+            # Get Bbox data
+            (x, y, w, h) , _ , _ = self.detector.getBbox(frame)
+            height, width, _ = frame.shape
+
+            # Get Inpainted image data
             inpainted = self.detector.drawBbox(frame, onlyBbox=True)         
             encoded_image = cv2.imencode('.jpg', inpainted)[1].tobytes()
-
+            
             with threading.Lock():
                 clients = list(self.clients)
 
             for client in clients: 
                 success = False 
                 try:
-                    success = client.send_image_data(encoded_image)
+                    success = client.send_image_with_bbox(encoded_image, bbox_values = (x,y,w,h), dims=(height, width))
                 except:
                     success = False
                     client.client_socket.close()
