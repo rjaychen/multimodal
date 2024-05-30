@@ -5,7 +5,7 @@ import socket
 import threading
 import time
 
-IP_ADDRESS = "127.0.0.1"
+IP_ADDRESS = "196.168.1.31"
 IP_PORT = 8083
 
 class Client:
@@ -68,7 +68,7 @@ class ImageServer:
 
             except Exception as e:
                 print(e)
-                print("shutting down stream")
+                print("Shutting down stream.")
 
         with threading.Lock():
             for client in self.clients:
