@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Linq;
 using UnityEngine.UI;
+using System.Collections;
 //using UnityEngine.Windows.WebCam;
 //using System.Collections.Generic;
 
@@ -68,10 +69,21 @@ public class TCPImageStream : MonoBehaviour
         // photoCaptureObject.StopPhotoModeAsync(OnStoppedPhotoMode);
     }
 
+    private IEnumerator TakePhoto()
+    {
+        while (true)
+        {
+            // Send Image Frames
+            sendQueue.Enqueue(WebCamToBytes(webCamTexture));
+            yield return new WaitForSeconds(0.066f);
+        }
+    }
+
     private void Start()
     {
         webCamTexture = new WebCamTexture(requestedCameraSize.x, requestedCameraSize.y, cameraFPS);
         webCamTexture.Play();
+        StartCoroutine(TakePhoto());
     }
 
     private void NetworkThread()
@@ -154,9 +166,6 @@ public class TCPImageStream : MonoBehaviour
 
     void Update()
     {
-        // Send Image Frames
-        sendQueue.Enqueue(WebCamToBytes(webCamTexture));
-
         if (imageQueue.Count > 0 && imageQueue.TryDequeue(out byte[] data))
         {
             if (tex == null)

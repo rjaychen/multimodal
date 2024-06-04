@@ -64,6 +64,11 @@ class ODImageServer(ImageServer):
                     inpainted = self.detector.drawBbox(frame, useBlurInstead=True, onlyBbox=True)         
                     encoded_image = cv2.imencode('.jpg', inpainted)[1].tobytes()
                     
+                    # # if you want to show full image 
+                    # frame[x:x+w, y:y+h] = inpainted
+                    # cv2.imshow("inpainted", frame)
+                    # cv2.waitKey(0)
+
                     with threading.Lock():
                         clients = list(self.clients)
 
