@@ -3,36 +3,57 @@ using System.Threading;
 using System.Net.Sockets;
 using System.IO;
 using System.Collections.Concurrent;
-using System.Text;
 using System.Net;
+using System.Linq;
+using UnityEngine.UI;
+//using UnityEngine.Windows.WebCam;
+//using System.Collections.Generic;
 
 public class TCPImageStream : MonoBehaviour
 {
     [SerializeField]
-    private string ipAddress = "127.0.0.1";
+    private bool useUserIP = false;
     [SerializeField]
-    private int ipPort = 8083;
+    private string ipAddressString = "192.168.1.27";
+    [SerializeField]
+    private int ipPort = 3810;
     [SerializeField]
     GameObject trackedObject;
     [SerializeField]
     private LayerMask spatialMask;
     [SerializeField]
     private float defaultDepth = 4f;
-
+    [SerializeField]
+    private Vector2Int requestedCameraSize = new(896, 504);
+    [SerializeField]
+    private int cameraFPS = 4;
 
     public Material sampleMaterial;
     public Texture2D tex = null;
 
     Thread m_NetworkThread;
     bool m_NetworkRunning;
+
+    private WebCamTexture webCamTexture;
+
+    ConcurrentQueue<byte[]> sendQueue = new ConcurrentQueue<byte[]>();
     ConcurrentQueue<byte[]> imageQueue = new ConcurrentQueue<byte[]>();
     ConcurrentQueue<Vector2[]> bboxQueue = new ConcurrentQueue<Vector2[]>();
+
+    private string getLocalIPv4()
+    {
+        return Dns.GetHostEntry(Dns.GetHostName()).AddressList.First(f =>
+                                f.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).ToString();
+    }
+
     private void OnEnable()
     {
         m_NetworkRunning = true;
         m_NetworkThread = new Thread(NetworkThread);
         m_NetworkThread.Start();
-
+        if (!useUserIP)
+            ipAddressString = getLocalIPv4();
+        GameObject.Find("/Display IP/Text").GetComponent<Text>().text = ipAddressString;
     }
     private void OnDisable()
     {
@@ -44,49 +65,76 @@ public class TCPImageStream : MonoBehaviour
                 m_NetworkThread.Abort();
             }
         }
+        // photoCaptureObject.StopPhotoModeAsync(OnStoppedPhotoMode);
+    }
+
+    private void Start()
+    {
+        webCamTexture = new WebCamTexture(requestedCameraSize.x, requestedCameraSize.y, cameraFPS);
+        webCamTexture.Play();
     }
 
     private void NetworkThread()
     {
         TcpClient client = new TcpClient();
-        client.Connect(ipAddress, ipPort);
-        Debug.Log($"Connecting to {ipAddress}/{ipPort}");
+        //IPAddress ipAddress = Dns.GetHostEntry(Dns.GetHostName()).AddressList[0];
+        //IPEndPoint ipLocalEndPoint = new IPEndPoint(ipAddress, ipPort);
+        //TcpClient client = new TcpClient(ipLocalEndPoint);
+        client.Connect(ipAddressString, ipPort);
+        Debug.Log($"Connecting to {ipAddressString}/{ipPort}");
+        // GameObject.Find("/Display IP/Text").GetComponent<Text>().text = $"Connecting to {ipAddressString}/{ipPort}";
         using (var stream = client.GetStream())
         {
             BinaryReader reader = new BinaryReader(stream);
+            BinaryWriter writer = new BinaryWriter(stream);
             try
             {
-                while (m_NetworkRunning && client.Connected && stream.CanRead)
+                while (m_NetworkRunning && client.Connected && stream.CanRead && stream.CanWrite)
                 {
-                    //int length = IPAddress.NetworkToHostOrder(reader.ReadInt32()); // get file size
-                    //// Debug.Log($"received filesize: {length}");
-                    //byte[] data = reader.ReadBytes(length); // get data
-                    //// Debug.Log($"read {length} bytes");
-                    //imageQueue.Enqueue(data);
+                    if (sendQueue.Count > 0 && sendQueue.TryDequeue(out byte[] data))
+                    {
+                        byte[] lengthPrefix = System.BitConverter.GetBytes(IPAddress.HostToNetworkOrder(data.Length));
+                        writer.Write(lengthPrefix);
+                        writer.Write(data);
+                        writer.Flush();
+                    }
 
-                    // Read the total length of the data (big-endian int32)
-                    int totalLength = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                    if (stream.DataAvailable) {
+                        //GameObject.Find("/Display IP/Text").GetComponent<Text>().text = $"Received payload";
 
-                    // Read the bbox data (6 integers)
-                    int bbox_x = IPAddress.NetworkToHostOrder(reader.ReadInt32());
-                    int bbox_y = IPAddress.NetworkToHostOrder(reader.ReadInt32());
-                    int bbox_w = IPAddress.NetworkToHostOrder(reader.ReadInt32());
-                    int bbox_h = IPAddress.NetworkToHostOrder(reader.ReadInt32());
-                    int height = IPAddress.NetworkToHostOrder(reader.ReadInt32());
-                    int width = IPAddress.NetworkToHostOrder(reader.ReadInt32());
-                    Vector2[] screenCoords = ImageToViewport((float)bbox_x, (float)bbox_y,
-                                                           (float)bbox_w, (float)bbox_h,
-                                                           (float)height, (float)width);
-                    bboxQueue.Enqueue(screenCoords);
-                    
-                    // Read the image data
-                    byte[] imageData = reader.ReadBytes(totalLength - 24); // Subtract 24 bytes for the bbox data
+                        // Read the total length of the data (big-endian int32)
+                        int totalLength = IPAddress.NetworkToHostOrder(reader.ReadInt32());
 
-                    imageQueue.Enqueue(imageData); // Enqueue the data
+                        // Read the bbox data (6 integers)
+                        int bbox_x = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                        int bbox_y = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                        int bbox_w = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                        int bbox_h = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                        int height = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                        int width = IPAddress.NetworkToHostOrder(reader.ReadInt32());
+                        Vector2[] screenCoords = ImageToViewport((float)bbox_x, (float)bbox_y,
+                                                               (float)bbox_w, (float)bbox_h,
+                                                               (float)height, (float)width);
+                        bboxQueue.Enqueue(screenCoords);
+
+                        // Read the image data
+                        byte[] imageData = reader.ReadBytes(totalLength - 24); // Subtract 24 bytes for the bbox data
+
+                        imageQueue.Enqueue(imageData); // Enqueue the data
+                    }
+                 
                 }
+
             }
-            catch { }
+            catch(IOException e) { Debug.Log($"Network Error: {e}"); }
         }
+    }
+
+    public byte[] WebCamToBytes(WebCamTexture _webCamTexture)
+    {
+        Texture2D _texture2D = new Texture2D(_webCamTexture.width, _webCamTexture.height);
+        _texture2D.SetPixels32(_webCamTexture.GetPixels32());
+        return ImageConversion.EncodeToJPG(_texture2D);
     }
 
     private Vector2[] ImageToViewport(float bbox_x, float bbox_y, float bbox_w, float bbox_h, float height, float width)
@@ -106,6 +154,9 @@ public class TCPImageStream : MonoBehaviour
 
     void Update()
     {
+        // Send Image Frames
+        sendQueue.Enqueue(WebCamToBytes(webCamTexture));
+
         if (imageQueue.Count > 0 && imageQueue.TryDequeue(out byte[] data))
         {
             if (tex == null)
@@ -132,25 +183,6 @@ public class TCPImageStream : MonoBehaviour
                 worldCoords[i] = Camera.main.ViewportToWorldPoint(new Vector3(viewportCoords[i].x, viewportCoords[i].y, defaultDepth));
                 center += worldCoords[i];
             }
-            Debug.Log($"{worldCoords[0]} | {worldCoords[1]} \n{worldCoords[2]} | {worldCoords[3]}");
-
-            
-            // // More advanced spatial mapping tracking
-            //for (int i = 0; i < viewportCoords.Length; i++)
-            //{
-            //    // Raycast to find the depth using spatial mapping
-            //    RaycastHit hit;
-            //    if (Physics.Raycast(Camera.main.ViewportPointToRay(viewportCoords[i]), out hit, Mathf.Infinity, spatialMapping))
-            //    {
-            //        worldCoords[i] = hit.point;
-            //    }
-            //    else
-            //    {
-            //        // Fallback: Use a default depth
-            //        worldCoords[i] = Camera.main.ViewportToWorldPoint(new Vector3(viewportCoords[i].x, viewportCoords[i].y, defaultDepth));
-            //    }
-            //    center += worldCoords[i];
-            //}
             float quadWidth = Mathf.Abs(worldCoords[1].x - worldCoords[0].x);
             float quadHeight = Mathf.Abs(worldCoords[2].y - worldCoords[0].y);
             center /= worldCoords.Length;

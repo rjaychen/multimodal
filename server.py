@@ -5,13 +5,17 @@ import socket
 import threading
 import time
 
-IP_ADDRESS = "196.168.1.31"
+# IP_ADDRESS = "196.168.1.31"
+# IP_PORT = 3816
+
+IP_ADDRESS = "0.0.0.0"
 IP_PORT = 8083
 
 class Client:
     def __init__(self, client_socket):
         self.client_socket = client_socket
         self.writer = client_socket.makefile('wb')
+        # self.reader = client_socket.makefile('rb')
 
     def send_image_data(self, image_data):
         if not self.client_socket:
@@ -42,9 +46,22 @@ class Client:
         except Exception as e:
             print(f"Error sending data: {e}")
             return False
+        
+    def recv_image_data(self):
+        if not self.client_socket:
+            return None, None
+        try:
+            image_length = int.from_bytes(self.client_socket.recv(4), "big")
+            data = self.client_socket.recv(image_length)
+            return data
+        except Exception as e:
+            print(f"Error receiving data: {e}")
+            return None, None
 
 class ImageServer:
-    def __init__(self):
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
         self.server = None
         self.server_running = False
         self.listen_thread = None
@@ -54,10 +71,11 @@ class ImageServer:
 
     def listen_thread_func(self):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server.bind((IP_ADDRESS, IP_PORT))
+        self.server.bind((self.host, self.port))
+        # self.server.connect((IP_ADDRESS, IP_PORT))
         self.server.listen(5)
         self.server_running = True
-        print("Server started, listening...")
+        print(f"Server started @ {self.host}/{self.port}, listening...")
         
         while self.server_running:
             try:
@@ -128,5 +146,5 @@ class ImageServer:
         input()
 
 if __name__ == "__main__":
-    server = ImageServer()
+    server = ImageServer(IP_ADDRESS, IP_PORT)
     server.run()

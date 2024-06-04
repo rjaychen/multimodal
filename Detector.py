@@ -63,6 +63,7 @@ class Detector:
             cropped = frame[y:y+h, x:x+w]
             blurred = cv2.medianBlur(cropped, 15)# cv2.GaussianBlur(cropped, kernelSize, 0)
             inpainted[y:y+h,x:x+w] = blurred
+            if onlyBbox: inpainted = blurred
         elif onlyBbox: 
             inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)[y:y+h, x:x+w]
         else: inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
