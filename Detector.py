@@ -45,27 +45,29 @@ class Detector:
         
         return bbox, classColor, displayText
 
-    def drawBbox(self, frame, useBlurInstead=False, onlyBbox=False):
+    def drawBbox(self, frame, useBlurInstead=False, onlyBbox=False, input_mask=None):
         """
         Returns: m x n x c image frame
         Draws a bbox using the selected detection model with either Telea inpainting or median blurring. 
         """
         (x, y, w, h) , classColor, displayText = self.getBbox(frame)
-        cv2.rectangle(frame, (x,y), (x+w, y+h), color=(255,0,0), thickness=1)
-        cv2.putText(frame, displayText, (x, y-10), cv2.FONT_HERSHEY_PLAIN, 1, classColor, 2)
+        # cv2.rectangle(frame, (x,y), (x+w, y+h), color=(255,0,0), thickness=1)
+        # cv2.putText(frame, displayText, (x, y-10), cv2.FONT_HERSHEY_PLAIN, 1, classColor, 2)
 
-        
-        mask = np.zeros(frame.shape[:2], dtype="uint8")
-        cv2.rectangle(mask, (x,y), (x+w, y+h), 255, -1)
-        # print(mask.shape)
+        if input_mask is not None: mask = input_mask
+        else: 
+            mask = np.zeros(frame.shape[:2], dtype="uint8")
+            cv2.rectangle(mask, (x,y), (x+w, y+h), 255, -1)
         if useBlurInstead:
-            inpainted = frame 
-            cropped = frame[y:y+h, x:x+w]
-            blurred = cv2.medianBlur(cropped, 15)# cv2.GaussianBlur(cropped, kernelSize, 0)
-            inpainted[y:y+h,x:x+w] = blurred
-            if onlyBbox: inpainted = blurred
+            inpainted = cv2.medianBlur(frame, 15)
+            result = cv2.bitwise_and(inpainted, inpainted, mask=mask)[y:y+h, x:x+w]
+            # inpainted[y:y+h,x:x+w] = blurred_mask
+            if onlyBbox: return result
         elif onlyBbox: 
-            inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)[y:y+h, x:x+w]
+            inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
+            if input_mask is not None: 
+                inpainted = cv2.bitwise_and(inpainted, inpainted, mask=mask)
+            inpainted = inpainted[y:y+h, x:x+w]
         else: inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
 
         return inpainted

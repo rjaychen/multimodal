@@ -1,4 +1,6 @@
 import cv2
+count = cv2.cuda.getCudaEnabledDeviceCount()
+print(f"cuda devices for cv2: {count}")
 from FastSAM.fastsam import FastSAM, FastSAMPrompt
 import torch
 import time
@@ -15,6 +17,8 @@ DEVICE = torch.device(
     if torch.backends.mps.is_available()
     else "cpu"
 )
+
+print(f"using {DEVICE}")
 
 DATA_FOLDER = "dnn_model_data"
 
@@ -35,7 +39,7 @@ while suc:
     start = time.perf_counter()
     results = model(
                 source=frame,
-                device=DEVICE,
+                device="cpu", # TODO: adapt code for GPU usage
                 retina_masks=True,
                 imgsz=(448,256), # should match frame size of camera, must be multiple of 32.
                 conf=0.4, # Confidence threshold
@@ -43,19 +47,21 @@ while suc:
             )
 
     (x, y, w, h), _ , _ = detector.getBbox(frame)
-
-    # annotated_frame = show_seg(results[0].masks.data)
+    # # annotated_frame = show_seg(results[0].masks.data)
     prompt_process = FastSAMPrompt(frame, results, device=DEVICE)
 
     # Box Prompt --> Inpaint
     mask = np.squeeze(prompt_process.box_prompt(bbox=[x,y,x+w,y+h])).astype(np.uint8)
-    inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
+    # print(prompt_process.box_prompt(bbox=[x,y,x+w,y+h]))
+    # cv2.imshow("mask", mask)
+    # inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
+    inpainted = detector.drawBbox(frame, useBlurInstead=False, onlyBbox=True, input_mask=mask)
     cv2.imshow("inpainted", inpainted)
     
     end = time.perf_counter()
     total_time = end - start
     fps = 1 / total_time
-            
+    cv2.rectangle(frame, (x,y), (x+w,y+h), (255,0,0), 2)
     cv2.putText(frame, f'FPS: {int(fps)}', (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
     cv2.imshow('img', frame)
     key = cv2.waitKey(1) & 0xFF

@@ -1,12 +1,18 @@
-from pynput import keyboard
-# import hl2ss
-# import hl2ss_lnm
 import os
-
+import time
+import queue
+from pynput import keyboard
 from server import *
 from Detector import *
-import queue
+from FastSAM.fastsam import FastSAM, FastSAMPrompt
 
+DEVICE = "cpu" # torch.device(
+    # "cuda"
+    # if torch.cuda.is_available()
+    # else "mps"
+    # if torch.backends.mps.is_available()
+    # else "cpu"
+# )
 DATA_FOLDER = "dnn_model_data"
 IP_ADDRESS = "192.168.1.27"
 # IP_ADDRESS = "127.0.0.1"
@@ -16,6 +22,7 @@ class ODImageServer(ImageServer):
     def __init__(self, host, port, configPath, modelPath, classesPath):
         super().__init__(host, port)
         self.detector = Detector(configPath, modelPath, classesPath)
+        self.sam_model = FastSAM('FastSAM-x.pt') # TODO: change this to formal input
         self.recv_queue = queue.LifoQueue()
 
     def recv_thread_func(self):
@@ -43,31 +50,33 @@ class ODImageServer(ImageServer):
         self.sending = True
         last_frame = None
         while(self.sending):
-            # print('sending')
-            # time.sleep(0.5)
             if (self.recv_queue.not_empty):
                 raw_frame = self.recv_queue.get()
                 
                 if len(raw_frame) > 0: 
                     frame = cv2.imdecode(np.asarray(bytearray(raw_frame), dtype=np.uint8), cv2.IMREAD_COLOR)
                     last_frame = frame
-                elif last_frame: frame = last_frame 
+                elif last_frame is not None: frame = last_frame 
                 else: frame = np.zeros((242, 420, 3), np.uint8)
-                # print(frame)
                 try: 
+                    # Image Processing Step ----------------------------------------------------------------
                     # Get Bbox data
-                    # print(frame.shape)
+                    results = self.sam_model(
+                        source=frame,
+                        device="cpu", # TODO: adapt code for GPU usage
+                        retina_masks=True,
+                        imgsz=(448,256), # should match frame size of camera, must be multiple of 32.
+                        conf=0.4, # Confidence threshold
+                        iou=0.9, # Intersection over union threshold (Filter out duplicate detections)
+                    )
                     (x, y, w, h) , _ , _ = self.detector.getBbox(frame)
                     height, width, _ = frame.shape
-
+                    # Get object mask data
+                    prompt_process = FastSAMPrompt(frame, results, device=DEVICE)
+                    mask = np.squeeze(prompt_process.box_prompt(bbox=[x,y,x+w,y+h])).astype(np.uint8)
                     # Get Inpainted image data
-                    inpainted = self.detector.drawBbox(frame, useBlurInstead=True, onlyBbox=True)         
+                    inpainted = self.detector.drawBbox(frame, useBlurInstead=False, onlyBbox=True , input_mask=mask)
                     encoded_image = cv2.imencode('.jpg', inpainted)[1].tobytes()
-                    
-                    # # if you want to show full image 
-                    # frame[x:x+w, y:y+h] = inpainted
-                    # cv2.imshow("inpainted", frame)
-                    # cv2.waitKey(0)
 
                     with threading.Lock():
                         clients = list(self.clients)
@@ -115,6 +124,7 @@ class ODImageServer(ImageServer):
         self.sending_thread.join()
         print("\nPress <Enter> to quit")
         input()
+
 if __name__ == "__main__":
     configPath = os.path.join(DATA_FOLDER, "ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt")
     modelPath = os.path.join(DATA_FOLDER, "frozen_inference_graph.pb")
